@@ -84,6 +84,7 @@ def evaluate(testset):
     # Print out the score for each test page.
     for i, score in enumerate(scores):
         print('Page {}: score = {:3.1f}% correct'.format(i+1, score))
+    print("Average score =", sum(scores) / len(scores))
 
 
 def usage():

@@ -6,13 +6,14 @@ COM3004 OCR Assignment
 Version: v1.0
 """
 import os
+from urllib import request
+import time
 import numpy as np
-import utils.utils as utils
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from scipy.linalg import eigh
 from scipy.stats import mode
-from urllib import request
+import utils.utils as utils
 
 
 def plot_letter_image(letter, feature_vectors_full, model):
@@ -42,7 +43,7 @@ def learn_pca(fvectors_train_full):
     cov_fvectors_train_full = np.cov(fvectors_train_full, rowvar=0)
     print("covx shape", cov_fvectors_train_full.shape)
     n = cov_fvectors_train_full.shape[0]
-    w, v = eigh(cov_fvectors_train_full, eigvals=(n - 11, n - 2))
+    v = eigh(cov_fvectors_train_full, eigvals=(n - 11, n - 2))[1]
     pca_matrix = np.fliplr(v)
     return pca_matrix.tolist()
 
@@ -130,11 +131,11 @@ def process_training_data(train_page_names):
     model_data['fvectors_train'] = fvectors_train.tolist()
 
     print('Generating dictionaries of words for evaluation stage')
-    model_data = generate_dictionary(model_data)
+    model_data = generate_dictionaries(model_data)
     return model_data
 
 
-def generate_dictionary(model):
+def generate_dictionaries(model):
     """ Generates dictionary of words used for error correction
 
     :param model: dictionary, stores the output of the training stage
@@ -181,15 +182,15 @@ def load_test_page(page_name, model):
 
 
 def classify_page(page, model):
-    """Classifier. Currently I am calling my nearest neighbour
-    classifier, since I am getting the best results from it.
+    """Classifier. Currently I am calling my k nearest neighbour
+    classifier with k = 50, since I am getting the best results from it.
 
     parameters:
 
     page - matrix, each row is a feature vector to be classified
     model - dictionary, stores the output of the training stage
     """
-    return knn(page, model, 1)
+    return k_nearest_neighbour_classifier(page, model, 50)
 
 
 def nearest_neighbour_classifier(page, model):
@@ -210,19 +211,7 @@ def nearest_neighbour_classifier(page, model):
     return labels_train[nearest_neighbour]
 
 
-def cosine_distance(vector1, vector2):
-    """Calculates cosine distance between two vectors.
-
-    :param vector1: numpy array
-    :param vector2: numpy array
-    :return: cosine of the angle between two vectors
-    """
-    vector1_mag = np.linalg.norm(vector1)
-    vector2_mag = np.linalg.norm(vector2)
-    return np.dot(vector1, vector2.transpose()) / np.outer(vector1_mag, vector2_mag.transpose())
-
-
-def knn(page, model, k):
+def k_nearest_neighbour_classifier(page, model, k):
     """Performs k nearest neighbour classification.
 
     :param page: matrix, each row is a feature vector to be classified
@@ -256,13 +245,47 @@ def correct_errors(page, labels, bboxes, model):
     dictionary = model['dictionary']
     prob_dictionary = model['prob_dictionary']
 
+    words_start = time.time()
     words = get_words(labels, bboxes)
-    words_no_punc = list(map(remove_punctuation, words))
-    incorrect_words = [word for word in words_no_punc if word.lower() not in dictionary]
-    corrections = [get_correction(word, prob_dictionary) for word in incorrect_words]
-    # print(corrections)
-    print(list(zip(incorrect_words, corrections)))
-    return labels
+    words_end = time.time()
+    print("get_words: ", words_end - words_start)
+
+    remove_punc_start = time.time()
+    words_no_punc = [(sum(len(word) for word in words[:i]), remove_punctuation(word)) for i, word in enumerate(words)]
+    remove_punc_end = time.time()
+    print("remove_punc: ", remove_punc_end - remove_punc_start)
+
+    incorrect_words_start = time.time()
+    incorrect_words = [(l_up_to, word) for l_up_to, word in words_no_punc if word.lower() not in dictionary]
+    incorrect_words_end = time.time()
+    print("incorrect_words: ", incorrect_words_end - incorrect_words_start)
+
+    corrections_start = time.time()
+    corrections = [(l_up_to, get_correction(word, prob_dictionary)) for l_up_to, word in incorrect_words]
+    corrections_end = time.time()
+    print("corrections: ", corrections_end - corrections_start)
+
+    corrected_labels_start = time.time()
+    corrected_labels = [get_correction_for_label(i, corrections, labels) for i in range(len(labels))]
+    corrected_labels_end = time.time()
+    print("corrected_labels: ", corrected_labels_end - corrected_labels_start)
+    return np.array(corrected_labels)
+
+
+def get_correction_for_label(label_index, corrections, labels):
+    """ Corrects a label by given label index.
+
+    :param label_index: index of label to be corrected
+    :param corrections: all corrections given to words
+    :param labels: the output classification label for each feature vector
+    :param words: the words extracted from labels from classification stage
+    :return: correct label if there is one
+    """
+    for l_up_to, correction in corrections:
+        for j, char in enumerate(correction):
+            if label_index == l_up_to + j:
+                return char
+    return labels[label_index]
 
 
 def get_correction(word, dictionary):
@@ -273,29 +296,29 @@ def get_correction(word, dictionary):
     :return: corrected word
     """
     possible_corrections = [(real, prob) for real, prob in dictionary if len(real) == len(word)]
-    possible_corrections2 = [(real, prob) for real, prob in possible_corrections if real in edits(word)]
+    edits_of_word = alterations(word)
+    possible_corrections2 = [(real, prob) for real, prob in possible_corrections if real in edits_of_word]
     if len(possible_corrections2) == 0:
         return ""
-    elif len(possible_corrections2) == 1:
+    if len(possible_corrections2) == 1:
         return possible_corrections2[0][0]
-    else:
-        return max(possible_corrections2, key=lambda x: x[1])[0]
+    return max(possible_corrections2, key=lambda x: x[1])[0]
 
 
-def edits(word):
+def alterations(word):
     """ Generate possible edits of a word
 
-    :param word: word to
+    :param word: word to generate edits for
     :return: set of possible edits of a word
     """
-    letters = "abcdefghijklmnopqrstuvwxyz"
-    # letters = letters + letters.upper()
-    splits = [(word[:i], word[i:]) for i in range(len(word) + 1)]
-    # deletes = [x + y[1:] for x, y in splits if x]
-    # transposes = [x + y[1] + y[0] + y[2:] for x, y in splits if len(y) > 1]
-    replaces = [L + c + R[1:] for L, R in splits if R for c in letters]
-    inserts = [L + c + R for L, R in splits for c in letters]
-    return set(replaces + inserts)
+    alphabet = "abcdefghijklmnopqrstuvwxyz"
+    edits = set()
+    for i in range(len(word)):
+        for letter in alphabet:
+            edit = list(word)
+            edit[i] = letter
+            edits.add(''.join(edit))
+    return edits
 
 
 def remove_punctuation(word):
@@ -304,8 +327,8 @@ def remove_punctuation(word):
     :param word: string to be depunctuated
     :return: word with no punctuation
     """
-    punctuation = "!,-.;?’"
-    return ''.join(filter(lambda char: char not in punctuation, word))
+    punctuation = "!,-.;?"
+    return ''.join(char for char in word if char not in punctuation)
 
 
 def get_words(labels, bboxes):
@@ -315,8 +338,8 @@ def get_words(labels, bboxes):
     :param bboxes: 2d array, each row gives the 4 bounding box coords of the character
     :return: array of strings of each word for a page
     """
-    spaces = np.array([bboxes[i + 1, 0] - bboxes[i, 2] for i in range(bboxes.shape[0] - 1)])
-    spaces = np.insert(spaces, 0, 0)
+    spaces = [bboxes[i + 1, 0] - bboxes[i, 2] for i in range(bboxes.shape[0] - 1)]
+    spaces.insert(0, 0)
     word = ""
     words = []
     for label, space in zip(labels, spaces):
@@ -328,6 +351,12 @@ def get_words(labels, bboxes):
 
 
 def search_google(word):
+    """ Searches google for word and checks for 'Did you mean:'. However, since
+    the evaluation stage is not run on a computer with an internet connection
+    this won't work.
+
+    :param word: word to be searched on google
+    """
     url = 'https://www.google.com/search?q=' + word
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:23.0) Gecko/20100101 Firefox/23.0'}
     req = request.Request(url, headers=headers)
