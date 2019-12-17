@@ -183,14 +183,14 @@ def load_test_page(page_name, model):
 
 def classify_page(page, model):
     """Classifier. Currently I am calling my k nearest neighbour
-    classifier with k = 50, since I am getting the best results from it.
+    classifier with k = 55, since I am getting the best results from it.
 
     parameters:
 
     page - matrix, each row is a feature vector to be classified
     model - dictionary, stores the output of the training stage
     """
-    return k_nearest_neighbour_classifier(page, model, 50)
+    return k_nearest_neighbour_classifier(page, model, 55)
 
 
 def nearest_neighbour_classifier(page, model):
@@ -296,8 +296,8 @@ def get_correction(word, dictionary):
     :return: corrected word
     """
     possible_corrections = [(real, prob) for real, prob in dictionary if len(real) == len(word)]
-    edits_of_word = alterations(word)
-    possible_corrections2 = [(real, prob) for real, prob in possible_corrections if real in edits_of_word]
+    edits = get_edits(word)
+    possible_corrections2 = [(poss, prob) for poss, prob in possible_corrections if poss in edits]
     if len(possible_corrections2) == 0:
         return ""
     if len(possible_corrections2) == 1:
@@ -305,7 +305,7 @@ def get_correction(word, dictionary):
     return max(possible_corrections2, key=lambda x: x[1])[0]
 
 
-def alterations(word):
+def get_edits(word):
     """ Generate possible edits of a word
 
     :param word: word to generate edits for
