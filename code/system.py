@@ -7,12 +7,12 @@ Version: v1.0
 """
 import os
 from urllib import request
-import time
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from scipy.linalg import eigh
 from scipy.stats import mode
+from scipy import ndimage
 import utils.utils as utils
 
 
@@ -39,9 +39,7 @@ def learn_pca(fvectors_train_full):
     :param fvectors_train_full: feature vectors stored as rows in a matrix
     :return PCA matrix
     """
-    print(fvectors_train_full.shape)
     cov_fvectors_train_full = np.cov(fvectors_train_full, rowvar=0)
-    print("covx shape", cov_fvectors_train_full.shape)
     n = cov_fvectors_train_full.shape[0]
     v = eigh(cov_fvectors_train_full, eigvals=(n - 11, n - 2))[1]
     pca_matrix = np.fliplr(v)
@@ -113,6 +111,8 @@ def process_training_data(train_page_names):
     labels_train = []
     for page_name in train_page_names:
         images_train = utils.load_char_images(page_name, images_train)
+        print('Applying gaussian filter to page', page_name.split('.')[1])
+        images_train = [ndimage.gaussian_filter(image, 0.9) for image in images_train]
         labels_train = utils.load_labels(page_name, labels_train)
     labels_train = np.array(labels_train)
 
@@ -160,7 +160,7 @@ def get_word_with_prob(line):
     :return: tuple of the word and its corresponding probability
     """
     line = line.split()
-    return line[1], int(line[2]) / 29213800
+    return line[1].replace("'", "’"), int(line[2]) / 29213800
 
 
 def load_test_page(page_name, model):
@@ -183,14 +183,14 @@ def load_test_page(page_name, model):
 
 def classify_page(page, model):
     """Classifier. Currently I am calling my k nearest neighbour
-    classifier with k = 55, since I am getting the best results from it.
+    classifier with k = 9.
 
     parameters:
 
     page - matrix, each row is a feature vector to be classified
     model - dictionary, stores the output of the training stage
     """
-    return k_nearest_neighbour_classifier(page, model, 55)
+    return k_nearest_neighbour_classifier(page, model, 9)
 
 
 def nearest_neighbour_classifier(page, model):
@@ -232,7 +232,7 @@ def k_nearest_neighbour_classifier(page, model, k):
     return nearest_neighbour[:, 0]
 
 
-def correct_errors(page, labels, bboxes, model):
+def correct_errors(_, labels, bboxes, model):
     """Dummy error correction. Returns labels unchanged.
 
     parameters:
@@ -245,30 +245,13 @@ def correct_errors(page, labels, bboxes, model):
     dictionary = model['dictionary']
     prob_dictionary = model['prob_dictionary']
 
-    words_start = time.time()
     words = get_words(labels, bboxes)
-    words_end = time.time()
-    print("get_words: ", words_end - words_start)
-
-    remove_punc_start = time.time()
     words_no_punc = [(sum(len(word) for word in words[:i]), remove_punctuation(word)) for i, word in enumerate(words)]
-    remove_punc_end = time.time()
-    print("remove_punc: ", remove_punc_end - remove_punc_start)
 
-    incorrect_words_start = time.time()
     incorrect_words = [(l_up_to, word) for l_up_to, word in words_no_punc if word.lower() not in dictionary]
-    incorrect_words_end = time.time()
-    print("incorrect_words: ", incorrect_words_end - incorrect_words_start)
-
-    corrections_start = time.time()
     corrections = [(l_up_to, get_correction(word, prob_dictionary)) for l_up_to, word in incorrect_words]
-    corrections_end = time.time()
-    print("corrections: ", corrections_end - corrections_start)
 
-    corrected_labels_start = time.time()
     corrected_labels = [get_correction_for_label(i, corrections, labels) for i in range(len(labels))]
-    corrected_labels_end = time.time()
-    print("corrected_labels: ", corrected_labels_end - corrected_labels_start)
     return np.array(corrected_labels)
 
 
@@ -278,7 +261,6 @@ def get_correction_for_label(label_index, corrections, labels):
     :param label_index: index of label to be corrected
     :param corrections: all corrections given to words
     :param labels: the output classification label for each feature vector
-    :param words: the words extracted from labels from classification stage
     :return: correct label if there is one
     """
     for l_up_to, correction in corrections:
@@ -311,7 +293,7 @@ def get_edits(word):
     :param word: word to generate edits for
     :return: set of possible edits of a word
     """
-    alphabet = "abcdefghijklmnopqrstuvwxyz"
+    alphabet = "abcdefghijklmnopqrstuvwxyz’"
     edits = set()
     for i in range(len(word)):
         for letter in alphabet:
