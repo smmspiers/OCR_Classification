@@ -5,7 +5,7 @@ with error correction for pages from a book.
 
 ## How to run
 
-Training the model and evaluating it on some data is easy with the shell script I created.
+Training the model and evaluating it on some data is easy. Just use the shell script I created:
 ```shell script
 ./run_evaluate.sh
 ```
