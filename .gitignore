@@ -129,3 +129,7 @@ dmypy.json
 .pyre/
 
 .idea
+
+# project stuff
+code/data/model.json.gz
+report.md
